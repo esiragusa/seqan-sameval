@@ -52,19 +52,10 @@ struct Options
 };
 
 // ----------------------------------------------------------------------------
-// Class RabemaOracleStats
+// Class Stats
 // ----------------------------------------------------------------------------
 
-namespace seqan {
-struct Tsv_;
-typedef Tag<Tsv_> Tsv;
-}
-
-// ----------------------------------------------------------------------------
-// Class RabemaStats
-// ----------------------------------------------------------------------------
-
-struct RabemaStats
+struct Stats
 {
     // Number of intervals that were to find.
     __uint64 intervalsToFind;
@@ -86,6 +77,8 @@ struct RabemaStats
 
     // The following arrays are indexed by the integer value of the error rate.
 
+    String<unsigned> readsMappedPerErrorRate;
+
     // Number of intervals that were to find for each error rate.
     String<unsigned> intervalsToFindForErrorRate;
     // Number of found intervals for each error rate.
@@ -98,29 +91,23 @@ struct RabemaStats
     // Normalized number of intervals found for each error rate.
     String<double> normalizedIntervalsFoundForErrorRate;
 
-    RabemaStats() :
+    Stats() :
         intervalsToFind(0), intervalsFound(0), invalidAlignments(0), totalReads(0), mappedReads(0),
         readsInGsi(0), normalizedIntervals(0), additionalHits(0)
     {}
 
-    RabemaStats(unsigned maxErrorRate) :
+    Stats(unsigned maxErrorRate) :
         intervalsToFind(0), intervalsFound(0), invalidAlignments(0), totalReads(0), mappedReads(0),
         readsInGsi(0), normalizedIntervals(0),
         additionalHits(0)
     {
+        resize(readsMappedPerErrorRate, maxErrorRate + 1, 0);
         resize(intervalsToFindForErrorRate, maxErrorRate + 1, 0);
         resize(intervalsFoundForErrorRate, maxErrorRate + 1, 0);
         resize(normalizedIntervalsToFindForErrorRate, maxErrorRate + 1, 0.0);
         resize(normalizedIntervalsFoundForErrorRate, maxErrorRate + 1, 0.0);
     }
 
-};
-
-struct RabemaOracleStats : RabemaStats
-{
-    String<unsigned> readsMappedPerErrorRate;
-
-    RabemaOracleStats() : RabemaStats() {}
 };
 
 // ============================================================================
@@ -133,8 +120,8 @@ struct RabemaOracleStats : RabemaStats
 
 void setupArgumentParser(ArgumentParser & parser, Options const & /* options */)
 {
-    setAppName(parser, "rabema_oracle");
-    setShortDescription(parser, "RABEMA Oracle");
+    setAppName(parser, "sameval");
+    setShortDescription(parser, "SAMeval");
     setCategory(parser, "Benchmarking");
 
 //    setDateAndVersion(parser);
@@ -259,8 +246,10 @@ bool isEqual(BamAlignmentRecord const & mapperRecord, BamAlignmentRecord const &
 // Function updateMaximalErrorRate()
 // ----------------------------------------------------------------------------
 
-void updateMaximalErrorRate(RabemaStats & stats, unsigned maxErrorRate)
+void updateMaximalErrorRate(Stats & stats, unsigned maxErrorRate)
 {
+    if (length(stats.readsMappedPerErrorRate) <= maxErrorRate + 1)
+        resize(stats.readsMappedPerErrorRate, maxErrorRate + 1, 0);
     if (length(stats.intervalsToFindForErrorRate) <= maxErrorRate + 1)
         resize(stats.intervalsToFindForErrorRate, maxErrorRate + 1, 0);
     if (length(stats.intervalsFoundForErrorRate) <= maxErrorRate + 1)
@@ -271,20 +260,12 @@ void updateMaximalErrorRate(RabemaStats & stats, unsigned maxErrorRate)
         resize(stats.normalizedIntervalsFoundForErrorRate, maxErrorRate + 1, 0.0);
 }
 
-void updateMaximalErrorRate(RabemaOracleStats & stats, unsigned maxErrorRate)
-{
-    updateMaximalErrorRate(static_cast<RabemaStats &>(stats), maxErrorRate);
-
-    if (length(stats.readsMappedPerErrorRate) <= maxErrorRate + 1)
-        resize(stats.readsMappedPerErrorRate, maxErrorRate + 1, 0);
-}
-
 // ----------------------------------------------------------------------------
 // Function writeStats()
 // ----------------------------------------------------------------------------
 
 template <typename TStream>
-void writeStats(TStream & stream, RabemaStats const & stats)
+void writeStats(TStream & stream, Stats const & stats)
 {
     stream << "Intervals to find:              " << stats.intervalsToFind << '\n'
            << "Intervals found:                " << stats.intervalsFound << '\n';
@@ -313,6 +294,7 @@ void writeStats(TStream & stream, RabemaStats const & stats)
     sprintf(buffer, "  ERR\t%8s\t%8s\t%8s\t%8s\t%10s\t%10s\n", "#max", "#found", "%found", "norm max", "norm found", "norm found [%]");
     stream << buffer
            << "------------------------------------------------------------------------------------------------------\n";
+
     for (unsigned i = 0; i < length(stats.intervalsToFindForErrorRate); ++i)
     {
         // if (maxError != -1  && (int)i != maxError)
@@ -335,16 +317,15 @@ void writeStats(TStream & stream, RabemaStats const & stats)
 // Function writeTsv()
 // ----------------------------------------------------------------------------
 
-template <typename TStream, typename TString1, typename TString2>
-int writeTsv(TStream & stream, RabemaStats const & stats, int maxError, TString1 const & benchmarkCategory,
-              bool oracleMode, TString2 const & distanceMetric)
+template <typename TStream>
+void writeTsv(TStream & stream, Stats const & stats, int maxError = 0)
 {
     stream << "##Rabema Results\n"
            << "##\n"
-           << "##category\t" << benchmarkCategory << '\n'
+           << "##category\t" << "oracle" << '\n'
            << "##max_distance\t" << maxError<< '\n'
-           << "##oracle_mode\t" << (oracleMode ? (char const *) "yes" : (char const *) "no") << "\n"
-           << "##distance_metric\t" << distanceMetric << '\n'
+           << "##oracle_mode\t" << "yes" << "\n"
+           << "##distance_metric\t" << "none" << '\n'
            << "##\n"
            << "##intervals_to_find\t" << stats.intervalsToFind << '\n'
            << "##intervals_found\t" << stats.intervalsFound << '\n'
@@ -365,6 +346,7 @@ int writeTsv(TStream & stream, RabemaStats const & stats, int maxError, TString1
            << "##Found Intervals By Distance\n"
            << "##\n"
            << "#error_rate\tnum_max\tnum_found\tpercent_found\tnorm_max\tnorm_found\tpercent_norm_found\n";
+
     char buffer[1000];
     for (unsigned i = 0; i < length(stats.intervalsToFindForErrorRate); ++i)
     {
@@ -381,8 +363,6 @@ int writeTsv(TStream & stream, RabemaStats const & stats, int maxError, TString1
                 percFoundNormalizedIntervals);
         stream << buffer;
     }
-
-    return 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -420,7 +400,7 @@ inline bool lessThanSamtoolsQueryName(CharString const & lhs, CharString const &
 // ----------------------------------------------------------------------------
 // Update stats after reading one oracle record.
 
-void updateOracleStats(RabemaOracleStats & stats, BamAlignmentRecord const & record)
+void updateOracleStats(Stats & stats, BamAlignmentRecord const & record)
 {
     unsigned errorRate = getErrorRate(record);
 
@@ -438,7 +418,7 @@ void updateOracleStats(RabemaOracleStats & stats, BamAlignmentRecord const & rec
 // ----------------------------------------------------------------------------
 // Update stats after reading one mapper record.
 
-void updateMapperStats(RabemaOracleStats & stats, Options const & options,
+void updateMapperStats(Stats & stats, Options const & options,
                        BamAlignmentRecord const & mapperRecord, BamAlignmentRecord const & oracleRecord)
 {
     SEQAN_ASSERT_EQ(oracleRecord.qName, mapperRecord.qName);
@@ -485,7 +465,7 @@ void runRabemaOracle(Options & options)
     BamAlignmentRecord oracleRecord;
     BamAlignmentRecord mapperRecord;
 
-    RabemaOracleStats stats;
+    Stats stats;
 
     if (!open(oracleFile, toCString(options.inputOracle)))
         throw RuntimeError("Error while opening the oracle SAM/BAM file.");
@@ -540,18 +520,17 @@ void runRabemaOracle(Options & options)
     }
 
     // Write stats to standard out.
-    writeStats(std::cout, static_cast<RabemaStats>(stats));
+    writeStats(std::cout, stats);
 
     // Write stats to TSV file.
     if (!empty(options.outputTsv))
     {
-        std::ofstream tsvFile(toCString(options.outputTsv), std::ios::out | std::ios::binary);
+        std::ofstream tsvFile;
 
-        if (!tsvFile.good())
+        if (!open(tsvFile, toCString(options.outputTsv)))
             throw RuntimeError("Error while opening the output TSV file.");
 
-        if (writeTsv(tsvFile, static_cast<RabemaStats>(stats), 0u, "oracle", true, "none") != 0)
-               throw RuntimeError("Error while writing the output TSV file.");
+        writeTsv(tsvFile, stats);
     }
 }
 
