@@ -31,6 +31,9 @@ add_definitions (${SEQAN_DEFINITIONS})
 add_executable (sameval sameval.cpp)
 target_link_libraries (sameval ${SEQAN_LIBRARIES})
 
+add_executable (sampe2se sampe2se.cpp)
+target_link_libraries (sampe2se ${SEQAN_LIBRARIES})
+
 # Add CXX flags found by find_package (SeqAn).
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SEQAN_CXX_FLAGS}")
 
@@ -64,7 +67,7 @@ install (FILES LICENSE
 # ----------------------------------------------------------------------------
 
 # Include executable sameval in CTD structure.
-set (SEQAN_CTD_EXECUTABLES ${SEQAN_CTD_EXECUTABLES} sameval CACHE INTERNAL "")
+set (SEQAN_CTD_EXECUTABLES ${SEQAN_CTD_EXECUTABLES} sameval sampe2se CACHE INTERNAL "")
 
 # ----------------------------------------------------------------------------
 # CPack Install
