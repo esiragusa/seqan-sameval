@@ -1,14 +1,14 @@
 # ===========================================================================
 #                  SeqAn - The Library for Sequence Analysis
 # ===========================================================================
-# File: /core/apps/sameval/CMakeLists.txt
+# File: /apps/sameval/CMakeLists.txt
 #
 # CMakeLists.txt file for Rabema.
 # ===========================================================================
 
 cmake_minimum_required (VERSION 2.8.2)
-project (core_apps_sameval)
-message (STATUS "Configuring core/apps/sameval")
+project (seqan_apps_sameval)
+message (STATUS "Configuring apps/sameval")
 
 # ----------------------------------------------------------------------------
 # Dependencies
