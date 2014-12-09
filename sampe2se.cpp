@@ -20,8 +20,6 @@
 // Author: Enrico Siragusa <enrico.siragusa@fu-berlin.de>
 // ==========================================================================
 
-#include <iostream>
-#include <seqan/file.h>
 #include <seqan/bam_io.h>
 
 using namespace seqan;
@@ -69,7 +67,7 @@ int main(int argc, char ** argv)
     }
 
     BamFileIn bamFileIn;
-    BamFileOut bamFileOut;
+    BamFileOut bamFileOut(bamFileIn);
     BamHeader header;
     BamAlignmentRecord record;
 
