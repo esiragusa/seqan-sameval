@@ -1,20 +1,32 @@
 // ==========================================================================
-//                                SAMeval
+//                               SamEval
 // ==========================================================================
-// Copyright (C) 2014 Enrico Siragusa, FU Berlin
+// Copyright (c) 2011-2015, Enrico Siragusa, FU Berlin
+// All rights reserved.
 //
-// This program is free software: you can redistribute it and/or modify it
-// under the terms of the GNU General Public License as published by the Free
-// Software Foundation, either version 3 of the License, or (at your option)
-// any later version.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
 //
-// This program is distributed in the hope that it will be useful, but WITHOUT
-// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-// FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-// more details.
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//     * Neither the name of Enrico Siragusa or the FU Berlin nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
 //
-// You should have received a copy of the GNU General Public License along
-// with this program.  If not, see <http://www.gnu.org/licenses/>.
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL ENRICO SIRAGUSA OR THE FU BERLIN BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+// DAMAGE.
 //
 // ==========================================================================
 // Author: Enrico Siragusa <enrico.siragusa@fu-berlin.de>
@@ -27,12 +39,8 @@
 using namespace seqan;
 
 // ============================================================================
-// Enums, Tags, Classes.
+// Options
 // ============================================================================
-
-// ----------------------------------------------------------------------------
-// Class Options
-// ----------------------------------------------------------------------------
 
 struct Options
 {
@@ -40,85 +48,22 @@ struct Options
     CharString inputMapper;
     CharString outputTsv;
 
-    bool precision;
+    bool mappingQuality;
     bool verbose;
     bool delta;
 
     Options() :
-        precision(false),
+        mappingQuality(false),
         verbose(false),
         delta(false)
     {}
 };
 
 // ----------------------------------------------------------------------------
-// Class Stats
-// ----------------------------------------------------------------------------
-
-struct Stats
-{
-    // Number of intervals that were to find.
-    __uint64 intervalsToFind;
-    // Number of intervals that were actually found.
-    __uint64 intervalsFound;
-    // SAM records that did not correspond to alignments below the configured maximal error rate.
-    __uint64 invalidAlignments;
-
-    // Total number of reads.
-    __uint64 totalReads;
-    // Number of reads with alignments below maximal error rate.
-    __uint64 mappedReads;
-    // Total number of reads with GSI records equals number of normalized intervals to find.
-    __uint64 readsInGsi;
-    // Normalized number of found intervals.
-    double normalizedIntervals;
-    // Number of additional alignments in SAM file with low enough error rate but no GSI record.
-    unsigned additionalHits;
-
-    // The following arrays are indexed by the integer value of the error rate.
-
-    String<unsigned> readsMappedPerErrorRate;
-
-    // Number of intervals that were to find for each error rate.
-    String<unsigned> intervalsToFindForErrorRate;
-    // Number of found intervals for each error rate.
-    String<unsigned> intervalsFoundForErrorRate;
-
-    // The following values are normalized towards all intervals.
-
-    // Normalized number of intervals to find for each error rate.
-    String<double> normalizedIntervalsToFindForErrorRate;
-    // Normalized number of intervals found for each error rate.
-    String<double> normalizedIntervalsFoundForErrorRate;
-
-    Stats() :
-        intervalsToFind(0), intervalsFound(0), invalidAlignments(0), totalReads(0), mappedReads(0),
-        readsInGsi(0), normalizedIntervals(0), additionalHits(0)
-    {}
-
-    Stats(unsigned maxErrorRate) :
-        intervalsToFind(0), intervalsFound(0), invalidAlignments(0), totalReads(0), mappedReads(0),
-        readsInGsi(0), normalizedIntervals(0),
-        additionalHits(0)
-    {
-        resize(readsMappedPerErrorRate, maxErrorRate + 1, 0);
-        resize(intervalsToFindForErrorRate, maxErrorRate + 1, 0);
-        resize(intervalsFoundForErrorRate, maxErrorRate + 1, 0);
-        resize(normalizedIntervalsToFindForErrorRate, maxErrorRate + 1, 0.0);
-        resize(normalizedIntervalsFoundForErrorRate, maxErrorRate + 1, 0.0);
-    }
-
-};
-
-// ============================================================================
-// Functions
-// ============================================================================
-
-// ----------------------------------------------------------------------------
 // Function setupArgumentParser()
 // ----------------------------------------------------------------------------
 
-void setupArgumentParser(ArgumentParser & parser, Options const & /* options */)
+void setupArgumentParser(ArgumentParser & parser)
 {
     setAppName(parser, "sameval");
     setShortDescription(parser, "SAMeval");
@@ -138,7 +83,7 @@ void setupArgumentParser(ArgumentParser & parser, Options const & /* options */)
     setHelpText(parser, 1, "Read mapper SAM/BAM file to evaluate.");
 
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
-    addOption(parser, seqan::ArgParseOption("p", "precision", "Compute precision. Default: compute recall."));
+    addOption(parser, seqan::ArgParseOption("q", "mapping-quality", "Class by mapping quality (QUAL). Default: class by edit distance."));
     addOption(parser, seqan::ArgParseOption("d", "delta", "Tolerate +- delta bp for begin/end positions. \
                                                            Default: require exact begin/end positions."));
 
@@ -146,7 +91,7 @@ void setupArgumentParser(ArgumentParser & parser, Options const & /* options */)
 
     addOption(parser, seqan::ArgParseOption("", "out-tsv", "Write the statistics to this TSV file.",
                                             seqan::ArgParseArgument::OUTPUT_FILE, "TSV"));
-    setValidValues(parser, "out-tsv", "rabema_report_tsv");
+    setValidValues(parser, "out-tsv", "tsv");
 }
 
 // ----------------------------------------------------------------------------
@@ -165,11 +110,46 @@ parseCommandLine(Options & options, ArgumentParser & parser, int argc, char cons
     getArgumentValue(options.inputMapper, parser, 1);
 
     getOptionValue(options.verbose, parser, "verbose");
-    getOptionValue(options.precision, parser, "precision");
+    getOptionValue(options.mappingQuality, parser, "mapping-quality");
     getOptionValue(options.delta, parser, "delta");
     getOptionValue(options.outputTsv, parser, "out-tsv");
 
     return seqan::ArgumentParser::PARSE_OK;
+}
+
+
+// ============================================================================
+// Functions
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// Function lessThanSamtoolsQueryName()
+// ----------------------------------------------------------------------------
+// Original comparison function for strings by Heng Li from samtools.
+
+inline int strnum_cmp(const char *a, const char *b)
+{
+	char *pa, *pb;
+	pa = (char*)a; pb = (char*)b;
+	while (*pa && *pb) {
+		if (isdigit(*pa) && isdigit(*pb)) {
+			long ai, bi;
+			ai = strtol(pa, &pa, 10);
+			bi = strtol(pb, &pb, 10);
+			if (ai != bi) return ai<bi? -1 : ai>bi? 1 : 0;
+		} else {
+			if (*pa != *pb) break;
+			++pa; ++pb;
+		}
+	}
+	if (*pa == *pb)
+		return (pa-a) < (pb-b)? -1 : (pa-a) > (pb-b)? 1 : 0;
+	return *pa<*pb? -1 : *pa>*pb? 1 : 0;
+}
+
+inline bool lessThanSamtoolsQueryName(CharString const & lhs, CharString const & rhs)
+{
+    return strnum_cmp(toCString(lhs), toCString(rhs)) < 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -215,7 +195,7 @@ unsigned getEndPos(BamAlignmentRecord const & record)
 template <typename TValue, typename TDelta>
 Pair<TValue> getRange(TValue value, TDelta delta)
 {
-    SEQAN_ASSERT_GEQ(value, delta);
+    SEQAN_ASSERT_GEQ(value, (TValue)delta);
     return Pair<TValue>(value - delta, value + delta);
 }
 
@@ -242,22 +222,71 @@ bool isEqual(BamAlignmentRecord const & mapperRecord, BamAlignmentRecord const &
            (isInRange(getEndPos(mapperRecord), getRange(getEndPos(oracleRecord), delta)));
 }
 
+// ============================================================================
+// Stats
+// ============================================================================
+
 // ----------------------------------------------------------------------------
-// Function updateMaximalErrorRate()
+// Class Stats
 // ----------------------------------------------------------------------------
 
-void updateMaximalErrorRate(Stats & stats, unsigned maxErrorRate)
+typedef Triple<__uint64>    Counts;
+typedef String<Counts>      Stats;
+
+// ----------------------------------------------------------------------------
+// Accessors
+// ----------------------------------------------------------------------------
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T1 &
+totalCount(Triple<T1, T2, T3, TSpec> & triple)
 {
-    if (length(stats.readsMappedPerErrorRate) <= maxErrorRate + 1)
-        resize(stats.readsMappedPerErrorRate, maxErrorRate + 1, 0);
-    if (length(stats.intervalsToFindForErrorRate) <= maxErrorRate + 1)
-        resize(stats.intervalsToFindForErrorRate, maxErrorRate + 1, 0);
-    if (length(stats.intervalsFoundForErrorRate) <= maxErrorRate + 1)
-        resize(stats.intervalsFoundForErrorRate, maxErrorRate + 1, 0);
-    if (length(stats.normalizedIntervalsToFindForErrorRate) <= maxErrorRate + 1)
-        resize(stats.normalizedIntervalsToFindForErrorRate, maxErrorRate + 1, 0.0);
-    if (length(stats.normalizedIntervalsFoundForErrorRate) <= maxErrorRate + 1)
-        resize(stats.normalizedIntervalsFoundForErrorRate, maxErrorRate + 1, 0.0);
+    return triple.i1;
+}
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T1 const &
+totalCount(Triple<T1, T2, T3, TSpec> const & triple)
+{
+    return triple.i1;
+}
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T2 &
+correctCount(Triple<T1, T2, T3, TSpec> & triple)
+{
+    return triple.i2;
+}
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T2 const &
+correctCount(Triple<T1, T2, T3, TSpec> const & triple)
+{
+    return triple.i2;
+}
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T3 &
+incorrectCount(Triple<T1, T2, T3, TSpec> & triple)
+{
+    return triple.i3;
+}
+
+template <typename T1, typename T2, typename T3, typename TSpec>
+inline T3 const &
+incorrectCount(Triple<T1, T2, T3, TSpec> const & triple)
+{
+    return triple.i3;
+}
+
+// ----------------------------------------------------------------------------
+// Function resizeStats()
+// ----------------------------------------------------------------------------
+
+void resizeStats(Stats & stats, unsigned threshold)
+{
+    if (length(stats) <= threshold + 1)
+        resize(stats, threshold + 1, Counts(0, 0, 0));
 }
 
 // ----------------------------------------------------------------------------
@@ -267,132 +296,10 @@ void updateMaximalErrorRate(Stats & stats, unsigned maxErrorRate)
 template <typename TStream>
 void writeStats(TStream & stream, Stats const & stats)
 {
-    stream << "Intervals to find:              " << stats.intervalsToFind << '\n'
-           << "Intervals found:                " << stats.intervalsFound << '\n';
-    if (stats.intervalsToFind > 0u)
-        stream << "Intervals found [%]             " << (100.0 * stats.intervalsFound / stats.intervalsToFind) << '\n';
-    else
-        stream << "Intervals found [%]             " << 0 << '\n';
-    stream << "Invalid alignments:             " << stats.invalidAlignments << '\n'
-           << "Additional Hits:                " << stats.additionalHits << '\n'
-           << '\n'
-           << "Number of reads:                " << stats.totalReads << '\n'
-           << "Number of reads with intervals: " << stats.readsInGsi << '\n'
-           << '\n'
-           << "Mapped reads:                   " << stats.mappedReads << '\n'
-           << "Mapped reads [% of total]:      " << 100.0 * stats.mappedReads / stats.totalReads << '\n'
-           << "Mapped reads [% of mappable]:   " << 100.0 * stats.mappedReads / stats.readsInGsi  << '\n'
-           << '\n'
-           << "Normalized intervals found:     " << stats.normalizedIntervals << '\n';
-    if (stats.readsInGsi > 0u)
-        stream << "Normalized intervals found [%]: " << (100.0 * stats.normalizedIntervals / stats.readsInGsi) << "\n\n";
-    else
-        stream << "Normalized intervals found [%]: " << 0 << "\n\n";
-    stream << "Found Intervals By Error Rate\n"
-           << "\n";
-    char buffer[1000];
-    sprintf(buffer, "  ERR\t%8s\t%8s\t%8s\t%8s\t%10s\t%10s\n", "#max", "#found", "%found", "norm max", "norm found", "norm found [%]");
-    stream << buffer
-           << "------------------------------------------------------------------------------------------------------\n";
+    stream << "threshold" << '\t' << "total" << '\t' << "correct" << '\t' << "incorrect" << '\n';
 
-    for (unsigned i = 0; i < length(stats.intervalsToFindForErrorRate); ++i)
-    {
-        // if (maxError != -1  && (int)i != maxError)
-        //     continue;
-        double percFoundIntervals = 100.0 * stats.intervalsFoundForErrorRate[i] / stats.intervalsToFindForErrorRate[i];
-        if (stats.intervalsToFindForErrorRate[i] == 0u)
-            percFoundIntervals = 0;
-        double percFoundNormalizedIntervals = 100.0 * stats.normalizedIntervalsFoundForErrorRate[i] / stats.normalizedIntervalsToFindForErrorRate[i];
-        if (stats.normalizedIntervalsToFindForErrorRate[i] == 0)
-            percFoundNormalizedIntervals = 0;
-        sprintf(buffer, "%5u\t%8d\t%8d\t%8.2f\t%8.2f\t%10.2f\t%10.2f\n", i, stats.intervalsToFindForErrorRate[i], stats.intervalsFoundForErrorRate[i],
-                percFoundIntervals, stats.normalizedIntervalsToFindForErrorRate[i], stats.normalizedIntervalsFoundForErrorRate[i],
-                percFoundNormalizedIntervals);
-        stream << buffer;
-    }
-    stream << '\n';
-}
-
-// ----------------------------------------------------------------------------
-// Function writeTsv()
-// ----------------------------------------------------------------------------
-
-template <typename TStream>
-void writeTsv(TStream & stream, Stats const & stats, int maxError = 0)
-{
-    stream << "##Rabema Results\n"
-           << "##\n"
-           << "##category\t" << "oracle" << '\n'
-           << "##max_distance\t" << maxError<< '\n'
-           << "##oracle_mode\t" << "yes" << "\n"
-           << "##distance_metric\t" << "none" << '\n'
-           << "##\n"
-           << "##intervals_to_find\t" << stats.intervalsToFind << '\n'
-           << "##intervals_found\t" << stats.intervalsFound << '\n'
-           << "##intervals_found_percent\t" << (100.0 * stats.intervalsFound / stats.intervalsToFind) << '\n'
-           << "##invalid_alignments\t" << stats.invalidAlignments << '\n'
-           << "##additional_hits\t" << stats.additionalHits << '\n'
-           << "##\n"
-           << "##number_of_reads\t" << stats.totalReads << '\n'
-           << "##number_of_reads_with_intervals\t" << stats.readsInGsi << '\n'
-           << "##\n"
-           << "##mapped_reads\t" << stats.mappedReads << '\n'
-           << "##mapped_reads_percent_of_total\t" << 100.0 * stats.mappedReads / stats.totalReads << '\n'
-           << "##mapped_reads_percent_of_mappable\t" << 100.0 * stats.mappedReads / stats.readsInGsi << '\n'
-           << "##\n"
-           << "##normalized_intervals_found\t" << stats.normalizedIntervals << '\n'
-           << "##normalized_intervals_found_percent\t" << (100.0 * stats.normalizedIntervals / stats.readsInGsi) << '\n'
-           << "##\n"
-           << "##Found Intervals By Distance\n"
-           << "##\n"
-           << "#error_rate\tnum_max\tnum_found\tpercent_found\tnorm_max\tnorm_found\tpercent_norm_found\n";
-
-    char buffer[1000];
-    for (unsigned i = 0; i < length(stats.intervalsToFindForErrorRate); ++i)
-    {
-        // if (maxError != -1  && (int)i != maxError)
-        //     continue;
-        double percFoundIntervals = 100.0 * stats.intervalsFoundForErrorRate[i] / stats.intervalsToFindForErrorRate[i];
-        if (stats.intervalsToFindForErrorRate[i] == 0u)
-            percFoundIntervals = 0;
-        double percFoundNormalizedIntervals = 100.0 * stats.normalizedIntervalsFoundForErrorRate[i] / stats.normalizedIntervalsToFindForErrorRate[i];
-        if (stats.normalizedIntervalsToFindForErrorRate[i] == 0)
-            percFoundNormalizedIntervals = 0;
-        sprintf(buffer, "%u\t%d\t%d\t%.2f\t%.2f\t%1.2f\t%.2f\n", i, stats.intervalsToFindForErrorRate[i], stats.intervalsFoundForErrorRate[i],
-                percFoundIntervals, stats.normalizedIntervalsToFindForErrorRate[i], stats.normalizedIntervalsFoundForErrorRate[i],
-                percFoundNormalizedIntervals);
-        stream << buffer;
-    }
-}
-
-// ----------------------------------------------------------------------------
-// Function lessThanSamtoolsQueryName()
-// ----------------------------------------------------------------------------
-// Original comparison function for strings by Heng Li from samtools.
-
-inline int strnum_cmp(const char *a, const char *b)
-{
-	char *pa, *pb;
-	pa = (char*)a; pb = (char*)b;
-	while (*pa && *pb) {
-		if (isdigit(*pa) && isdigit(*pb)) {
-			long ai, bi;
-			ai = strtol(pa, &pa, 10);
-			bi = strtol(pb, &pb, 10);
-			if (ai != bi) return ai<bi? -1 : ai>bi? 1 : 0;
-		} else {
-			if (*pa != *pb) break;
-			++pa; ++pb;
-		}
-	}
-	if (*pa == *pb)
-		return (pa-a) < (pb-b)? -1 : (pa-a) > (pb-b)? 1 : 0;
-	return *pa<*pb? -1 : *pa>*pb? 1 : 0;
-}
-
-inline bool lessThanSamtoolsQueryName(CharString const & lhs, CharString const & rhs)
-{
-    return strnum_cmp(toCString(lhs), toCString(rhs)) < 0;
+    for (unsigned i = 0; i < length(stats); ++i)
+        stream << i << '\t' << totalCount(stats[i]) << '\t' << correctCount(stats[i]) << '\t' << incorrectCount(stats[i]) << '\n';
 }
 
 // ----------------------------------------------------------------------------
@@ -404,13 +311,9 @@ void updateOracleStats(Stats & stats, BamAlignmentRecord const & record)
 {
     unsigned errorRate = getErrorRate(record);
 
-    updateMaximalErrorRate(stats, errorRate);
+    resizeStats(stats, errorRate);
 
-    stats.totalReads++;
-    stats.readsInGsi++;
-    stats.intervalsToFind++;
-    stats.intervalsToFindForErrorRate[errorRate]++;
-    stats.normalizedIntervalsToFindForErrorRate[errorRate]++;
+    totalCount(stats[errorRate])++;
 }
 
 // ----------------------------------------------------------------------------
@@ -430,31 +333,33 @@ void updateMapperStats(Stats & stats, Options const & options,
         unsigned errorRate = getErrorRate(oracleRecord);
 
         // Update mapper stats.
-        stats.mappedReads++;
-        stats.readsMappedPerErrorRate[errorRate]++;
-
         if (isEqual(mapperRecord, oracleRecord, delta))
         {
-            // Update mapper stats.
-            stats.intervalsFound++;
-            stats.normalizedIntervals++;
-            stats.intervalsFoundForErrorRate[errorRate]++;
-            stats.normalizedIntervalsFoundForErrorRate[errorRate]++;
+            correctCount(stats[errorRate])++;
         }
-        else if (options.verbose)
+        else
         {
-            std::cout << "WARNING: " << mapperRecord.qName
-                      << " at " << Pair<unsigned>(mapperRecord.beginPos, getEndPos(mapperRecord))
-                      << " differs from " << Pair<unsigned>(oracleRecord.beginPos, getEndPos(oracleRecord)) << '\n';
+            incorrectCount(stats[errorRate])++;
+
+            if (options.verbose)
+            {
+                std::cerr << "WARNING: " << mapperRecord.qName
+                          << " at " << Pair<unsigned>(mapperRecord.beginPos, getEndPos(mapperRecord))
+                          << " differs from " << Pair<unsigned>(oracleRecord.beginPos, getEndPos(oracleRecord)) << '\n';
+            }
         }
     }
 }
 
+// ============================================================================
+// Main
+// ============================================================================
+
 // ----------------------------------------------------------------------------
-// Function runRabemaOracle()
+// Function run()
 // ----------------------------------------------------------------------------
 
-void runRabemaOracle(Options & options)
+void run(Options & options)
 {
     BamFileIn oracleFile;
     BamFileIn mapperFile;
@@ -512,13 +417,6 @@ void runRabemaOracle(Options & options)
     }
     while (true);
 
-    // As precision=found/mapped, just overwrite intervals to find with mapped reads.
-    if (options.precision)
-    {
-        stats.intervalsToFindForErrorRate = stats.readsMappedPerErrorRate;
-        stats.normalizedIntervalsToFindForErrorRate = stats.readsMappedPerErrorRate;
-    }
-
     // Write stats to standard out.
     writeStats(std::cout, stats);
 
@@ -530,7 +428,7 @@ void runRabemaOracle(Options & options)
         if (!open(tsvFile, toCString(options.outputTsv)))
             throw RuntimeError("Error while opening the output TSV file.");
 
-        writeTsv(tsvFile, stats);
+        writeStats(tsvFile, stats);
     }
 }
 
@@ -542,7 +440,7 @@ int main(int argc, char const ** argv)
 {
     ArgumentParser parser;
     Options options;
-    setupArgumentParser(parser, options);
+    setupArgumentParser(parser);
 
     ArgumentParser::ParseResult res = parseCommandLine(options, parser, argc, argv);
 
@@ -551,7 +449,7 @@ int main(int argc, char const ** argv)
 
     try
     {
-        runRabemaOracle(options);
+        run(options);
     }
     catch (Exception const & e)
     {
