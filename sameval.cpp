@@ -83,7 +83,8 @@ void setupArgumentParser(ArgumentParser & parser)
     setHelpText(parser, 1, "Read mapper SAM/BAM file to evaluate.");
 
     addOption(parser, seqan::ArgParseOption("v", "verbose", "Enable verbose output."));
-    addOption(parser, seqan::ArgParseOption("q", "mapping-quality", "Class by mapping quality (QUAL). Default: class by edit distance."));
+    addOption(parser, seqan::ArgParseOption("q", "mapping-quality", "Class by mapping quality (QUAL). \
+                                                                     Default: class by oracle error rate (NM)."));
     addOption(parser, seqan::ArgParseOption("d", "delta", "Tolerate +- delta bp for begin/end positions. \
                                                            Default: require exact begin/end positions."));
 
@@ -307,13 +308,14 @@ void writeStats(TStream & stream, Stats const & stats)
 // ----------------------------------------------------------------------------
 // Update stats after reading one oracle record.
 
-void updateOracleStats(Stats & stats, BamAlignmentRecord const & record)
+void updateOracleStats(Stats & stats, Options const & options, BamAlignmentRecord const & record)
 {
-    unsigned errorRate = getErrorRate(record);
-
-    resizeStats(stats, errorRate);
-
-    totalCount(stats[errorRate])++;
+    if (!options.mappingQuality)
+    {
+        unsigned errorRate = getErrorRate(record);
+        resizeStats(stats, errorRate);
+        totalCount(stats[errorRate])++;
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -321,8 +323,23 @@ void updateOracleStats(Stats & stats, BamAlignmentRecord const & record)
 // ----------------------------------------------------------------------------
 // Update stats after reading one mapper record.
 
-void updateMapperStats(Stats & stats, Options const & options,
-                       BamAlignmentRecord const & mapperRecord, BamAlignmentRecord const & oracleRecord)
+void updateMapperStats(Stats & stats, Options const & options, BamAlignmentRecord const & record)
+{
+    if (options.mappingQuality)
+    {
+        unsigned mappingQuality = record.mapQ;
+        resizeStats(stats, mappingQuality);
+        totalCount(stats[mappingQuality])++;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Function updateStats()
+// ----------------------------------------------------------------------------
+// Update stats after reading one mapper and oracle record.
+
+void updateStats(Stats & stats, Options const & options,
+                 BamAlignmentRecord const & mapperRecord, BamAlignmentRecord const & oracleRecord)
 {
     SEQAN_ASSERT_EQ(oracleRecord.qName, mapperRecord.qName);
 
@@ -331,15 +348,16 @@ void updateMapperStats(Stats & stats, Options const & options,
     {
         unsigned delta = options.delta ? getEditDistance(oracleRecord) : 0;
         unsigned errorRate = getErrorRate(oracleRecord);
+        unsigned threshold = options.mappingQuality ? mapperRecord.mapQ : errorRate;
 
         // Update mapper stats.
         if (isEqual(mapperRecord, oracleRecord, delta))
         {
-            correctCount(stats[errorRate])++;
+            correctCount(stats[threshold])++;
         }
         else
         {
-            incorrectCount(stats[errorRate])++;
+            incorrectCount(stats[threshold])++;
 
             if (options.verbose)
             {
@@ -385,10 +403,11 @@ void run(Options & options)
 
     // Read first oracle record.
     readRecord(oracleRecord, oracleFile);
-    updateOracleStats(stats, oracleRecord);
+    updateOracleStats(stats, options, oracleRecord);
 
     // Read first mapper record.
     readRecord(mapperRecord, mapperFile);
+    updateMapperStats(stats, options, mapperRecord);
 
     // Read the rest of the oracle and mapper files.
     // Invariant: the oracle file contains each read exactly once.
@@ -398,7 +417,7 @@ void run(Options & options)
         bool mapperLToracle = lessThanSamtoolsQueryName(mapperRecord.qName, oracleRecord.qName);
 
         if (!mapperLToracle && !oracleLTmapper)
-            updateMapperStats(stats, options, mapperRecord, oracleRecord);
+            updateStats(stats, options, mapperRecord, oracleRecord);
 
         if (atEnd(mapperFile) && atEnd(oracleFile))
             break;
@@ -407,12 +426,13 @@ void run(Options & options)
         {
             // Read next oracle record.
             readRecord(oracleRecord, oracleFile);
-            updateOracleStats(stats, oracleRecord);
+            updateOracleStats(stats, options, oracleRecord);
         }
         else if (!atEnd(mapperFile))
         {
             // Read next mapper record.
             readRecord(mapperRecord, mapperFile);
+            updateMapperStats(stats, options, mapperRecord);
         }
     }
     while (true);
