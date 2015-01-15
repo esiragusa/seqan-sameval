@@ -362,8 +362,8 @@ void updateStats(Stats & stats, Options const & options,
             if (options.verbose)
             {
                 std::cerr << "WARNING: " << mapperRecord.qName
-                          << " at " << Pair<unsigned>(mapperRecord.beginPos, getEndPos(mapperRecord))
-                          << " differs from " << Pair<unsigned>(oracleRecord.beginPos, getEndPos(oracleRecord)) << '\n';
+                          << " at " << Triple<unsigned>(mapperRecord.beginPos, getEndPos(mapperRecord), getEditDistance(mapperRecord))
+                          << " instead of " << Triple<unsigned>(oracleRecord.beginPos, getEndPos(oracleRecord), getEditDistance(oracleRecord)) << '\n';
             }
         }
     }
